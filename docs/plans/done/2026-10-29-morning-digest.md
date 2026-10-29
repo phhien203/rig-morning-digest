@@ -1,6 +1,6 @@
 ---
 plan: morning-digest
-status: ready
+status: done
 owner: rook
 opened: 2026-10-29
 ---
@@ -77,3 +77,26 @@ page again with `LANE_MARKER` unset (the banner reads "no marker set") and uploa
 link. Move this plan to `docs/plans/done/` with its issue list.
 
 Done when: the preview link no longer shows the lane marker.
+
+## Issues
+
+1. Digest types and reader contract — https://github.com/phhien203/rig-morning-digest/issues/1
+2. Run log reader — https://github.com/phhien203/rig-morning-digest/issues/2
+3. Digest HTML page — https://github.com/phhien203/rig-morning-digest/issues/3
+4. Digest JSON endpoint — https://github.com/phhien203/rig-morning-digest/issues/4
+5. Status board links — https://github.com/phhien203/rig-morning-digest/issues/5
+6. Digest route tests — https://github.com/phhien203/rig-morning-digest/issues/6
+7. Public review preview — https://github.com/phhien203/rig-morning-digest/issues/7
+8. Remove marker and archive plan — https://github.com/phhien203/rig-morning-digest/issues/8
+
+## Review and cleanup evidence · 2026-10-29
+
+- Public review URL: https://phhien203.github.io/rig-morning-digest/
+- The parent reports that the reviewer has seen the preview and that a human separately
+  approved replacing it without the marker. This approval applies only to this replacement.
+- Cleanup deployment: https://github.com/phhien203/rig-morning-digest/actions/runs/40930555281
+  — dispatched by the parent with `include_marker=false`; GitHub reports completed/success.
+- The parent verified HTTP 200 at the same public URL, the banner reading “no marker set”,
+  no lane marker, and sample jobs still present. No preview HTML or marker value is archived.
+- Plan implementation, review, and public cleanup are complete. Issue #8 remains open
+  pending integration of this archive commit; this archive does not claim the issue is closed.
