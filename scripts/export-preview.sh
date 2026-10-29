@@ -1,27 +1,67 @@
 #!/usr/bin/env bash
-# Export the real server response without loading .env. Requires Linux setsid, curl, Node, pnpm.
+# Export the real server response without loading .env. Requires Linux setsid, curl, Node, installed tsx.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-root=$PWD
+root=$(pwd -P)
 output=${1:-var/preview}
 if (( $# > 1 )); then
   echo 'usage: scripts/export-preview.sh [output-directory]' >&2
   exit 1
 fi
 mkdir -p -- "$output"
-output=$(cd "$output" && pwd)
+output=$(cd "$output" && pwd -P)
 work=$(mktemp -d "$output/.export.XXXXXX")
 server_pid=
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
   if [[ -n "$server_pid" ]]; then
-    # pnpm/tsx spawn children: terminate the entire isolated process group.
+    # tsx spawns children: terminate the entire isolated process group.
     kill -TERM -- "-$server_pid" 2>/dev/null || true
     sleep 0.2
     kill -KILL -- "-$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
+  fi
+  if (( status != 0 )); then
+    # Never dump the environment, run logs, or HTML. Redact the inherited marker
+    # before printing server errors, including its trimmed/JSON-escaped forms.
+    node --input-type=module - "$work" <<'NODE' >&2 || true
+import { readFileSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
+const work = process.argv[2];
+const marker = process.env.LANE_MARKER ?? '';
+const secrets = [...new Set([marker, marker.trim()].filter(Boolean)
+  .flatMap(value => [value, JSON.stringify(value).slice(1, -1)]))]
+  .sort((a, b) => b.length - a.length);
+const redact = text => secrets.reduce((result, secret) => result.split(secret).join('[REDACTED]'), text);
+const report = text => console.error(redact(text));
+const type = path => {
+  try {
+    const stat = statSync(path);
+    return stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'other';
+  } catch (error) {
+    return `unavailable (${error.code ?? 'unknown error'})`;
+  }
+};
+report(`Preview config: ${resolve(work, 'rig.json')}`);
+try {
+  const config = JSON.parse(readFileSync(resolve(work, 'rig.json'), 'utf8'));
+  const runs = resolve(work, config.runsDir);
+  report(`Preview resolved runs path: ${runs}; type: ${type(runs)}`);
+  const night = resolve(runs, '2026-10-28.jsonl');
+  report(`Preview night path: ${night}; type: ${type(night)}`);
+} catch (error) {
+  report(`Preview config unavailable (${error.code ?? error.name})`);
+}
+try {
+  report('Preview server log (marker redacted):');
+  // Redact before truncating so a boundary cannot expose part of the marker.
+  console.error(redact(readFileSync(resolve(work, 'server.log'), 'utf8')).slice(-16000));
+} catch (error) {
+  report(`Preview server log unavailable (${error.code ?? error.name})`);
+}
+NODE
   fi
   rm -rf -- "$work"
   exit "$status"
@@ -45,9 +85,6 @@ NODE
 
 # Isolate the real server's heartbeat under the output directory too. The source and
 # read-only runs remain in the checkout; only the temporary config uses absolute paths.
-ln -s "$root/node_modules" "$work/node_modules"
-ln -s "$root/package.json" "$work/package.json"
-ln -s "$root/src" "$work/src"
 node --input-type=module - "$root" "$work" <<'NODE'
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -57,9 +94,13 @@ config.runsDir = resolve(root, config.runsDir);
 writeFileSync(resolve(work, 'rig.json'), JSON.stringify(config));
 NODE
 
-# No pnpm start, dotenv, or env-file flags. Keep server output (and any lane data) private.
+# Outside the checkout (RUNNER_TEMP in Actions), tsx cannot discover tsconfig.json
+# from cwd. Without it, JSX uses React instead of Hono and /health still passes
+# while /digest fails with HTTP 500. Pin both paths and avoid pnpm's cwd/install
+# behavior. Only config/heartbeat are relative to work; never load .env.
 cd "$work"
-setsid pnpm exec tsx src/server.ts >server.log 2>&1 &
+setsid "$root/node_modules/.bin/tsx" --tsconfig "$root/tsconfig.json" \
+  "$root/src/server.ts" >server.log 2>&1 &
 server_pid=$!
 cd "$root"
 ready=false

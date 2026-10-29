@@ -36,6 +36,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm typecheck
+      - name: Test preview exporter
+        run: scripts/test-export-preview.sh
       - name: Export digest
         env:
           INCLUDE_MARKER: ${{ inputs.include_marker }}
